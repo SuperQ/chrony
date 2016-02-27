@@ -1250,6 +1250,7 @@ give_help(void)
     "Other daemon commands:\0\0"
     "cyclelogs\0Close and re-open log files\0"
     "dump\0Dump all measurements to save files\0"
+    "metrics\0Display Prometheus metrics\0"
     "\0\0"
     "Client commands:\0\0"
     "dns -n|+n\0Disable/enable resolving IP addresses to hostnames\0"
@@ -1657,6 +1658,15 @@ print_clientlog_interval(int rate)
   } else {
     printf("%2d", rate);
   }
+}
+
+/* ================================================== */
+
+static void
+print_prometheus_header(char *metric, char *help, char *type)
+{
+  printf("# HELP %s %s\n", metric, help);
+  printf("# TYPE %s %s\n", metric, type);
 }
 
 /* ================================================== */
@@ -2469,6 +2479,50 @@ process_cmd_keygen(char *line)
   return 1;
 }
 
+static int
+process_cmd_metrics(char *line)
+{
+  CMD_Request request;
+  CMD_Reply reply;
+
+  request.command = htons(REQ_SERVER_STATS);
+
+  if (!request_reply(&request, &reply, RPY_SERVER_STATS, 0))
+    return 0;
+
+  print_prometheus_header("chrony_ntp_packets_received_total",
+                          "NTP packets received",
+                          "counter");
+  printf("chrony_ntp_packets_received_total %"PRIu32"\n",
+          ntohl(reply.data.server_stats.ntp_hits));
+
+  print_prometheus_header("chrony_ntp_packets_dropped_total",
+                          "NTP packets dropped",
+                          "counter");
+  printf("chrony_ntp_packets_dropped_total %"PRIu32"\n",
+         ntohl(reply.data.server_stats.ntp_drops));
+
+  print_prometheus_header("chrony_command_packets_received_total",
+                          "Command packets received",
+                          "counter");
+  printf("chrony_command_packets_received_total %"PRIu32"\n",
+         ntohl(reply.data.server_stats.cmd_hits));
+
+  print_prometheus_header("chrony_command_packets_dropped_total",
+                          "Command packets dropped",
+                          "counter");
+  printf("chrony_command_packets_dropped_total %"PRIu32"\n",
+         ntohl(reply.data.server_stats.cmd_drops));
+
+  print_prometheus_header("chrony_log_records_dropped_total",
+                          "Client log records dropped",
+                          "counter");
+  printf("chrony_log_records_dropped_total %"PRIu32"\n",
+         ntohl(reply.data.server_stats.log_drops));
+
+  return 0;
+}
+
 /* ================================================== */
 
 static int
@@ -2583,6 +2637,8 @@ process_line(char *line)
     do_normal_submit = process_cmd_maxpoll(&tx_message, line);
   } else if (!strcmp(command, "maxupdateskew")) {
     do_normal_submit = process_cmd_maxupdateskew(&tx_message, line);
+  } else if (!strcmp(command, "metrics")) {
+    do_normal_submit = process_cmd_metrics(line);
   } else if (!strcmp(command, "minpoll")) {
     do_normal_submit = process_cmd_minpoll(&tx_message, line);
   } else if (!strcmp(command, "minstratum")) {
